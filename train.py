@@ -155,6 +155,7 @@ def build_graph(reader,
     loss_3 = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits_aux_3, labels=labels_batch))
 
     loss = loss_0 + loss_1 + loss_2 + loss_3
+
     predictions = ( logits_aux_0 + logits_aux_1 + logits_aux_2 + logits_aux_3 )
 
     train_vars = train_v0
@@ -164,11 +165,11 @@ def build_graph(reader,
     train_vars.extend(train_v4)
     train_vars.extend(train_v5)
     train_op = optimizer.minimize(loss, global_step=global_step, var_list=train_vars)
+    logging.info("%s\n*****************************\n%s", train_vars, restore_vars)
 
     tf.add_to_collection("global_step", global_step)
     tf.add_to_collection("loss", loss)
     tf.add_to_collection("feature", feature)
-    #tf.add_to_collection("feature_1", feature_1)
     tf.add_to_collection("aux_feat_batch", aux_feat_batch)
     tf.add_to_collection("aux_output", aux_output)
     tf.add_to_collection("aux_fc_batch_0", aux_fc_batch_0)
@@ -186,10 +187,6 @@ def build_graph(reader,
     tf.add_to_collection("images_loader", images_loader)
     tf.add_to_collection("labels_loader", labels_loader)
 
-    #restore_vars_0_dict = {v.name[4:][:-2]: v
-    #        for v in restore_vars_0}
-    #restore_vars_1_dict = {v.name[8:][:-2]: v
-    #        for v in restore_vars_1}
     return restore_vars
 
 def find_class_by_name(name, modules):
@@ -320,7 +317,6 @@ class Trainer(object):
             inputs = tf.get_collection("input_batch")[0]
             train_op = tf.get_collection("train_op")[0]
             feature = tf.get_collection("feature")[0]
-            #feature_1 = tf.get_collection("feature_1")[0]
             aux_feat_batch = tf.get_collection("aux_feat_batch")[0]
             aux_output = tf.get_collection("aux_output")[0]
             aux_fc_batch_0 = tf.get_collection("aux_fc_batch_0")[0]
@@ -349,6 +345,7 @@ class Trainer(object):
             saver=saver)
 
         with tf.Session(graph=graph) as sess:
+            #print(graph.as_graph_def())
             if not meta_filename:
                 saver_for_restore.restore(sess, FLAGS.checkpoint_file)
 
@@ -443,7 +440,7 @@ class Trainer(object):
                         if not os.path.exists(p):
                             os.makedirs(p)
                         avg_h1 = evaluate(FLAGS.dataset, FLAGS.model, FLAGS.train_dir,
-                                        FLAGS.dataset_dir, FLAGS.splits_dir, 1, FLAGS.batch_size, FLAGS.split_num)
+                                        FLAGS.dataset_dir, FLAGS.splits_dir, 1, FLAGS.batch_size / 2, FLAGS.split_num)
                         if avg_h1 > global_h1:
                             global_h1 = avg_h1
                             latest_checkpoint = tf.train.latest_checkpoint(FLAGS.train_dir)

@@ -50,6 +50,62 @@ class NTURGBD(object):
 
         return feat_vec, label
 
+class HybridModelTFRecordReader(object):
+
+    def __init__(self, dataset_dir, split_dir, num_epochs, batch_size, split=1):
+        self.dataset_dir = dataset_dir
+        self.splits_dir = split_dir
+        self.num_splits = 2
+        self.num_classes = 60
+        self.num_epochs = num_epochs
+        self.batch_size = batch_size
+        self.present_split = split
+
+        self.train_split_files = {'1': 'train1', '2': 'train2'}
+        self.test_split_files = {'1': 'test1', '2': 'test2'}
+
+    def _read_filelist(self, split='1', train=True, **kwargs):
+        files = []; labels = []
+        if train:
+            dirname = self.train_split_files[split]
+        else:
+            dirname = self.test_split_files[split]
+
+        dirs = gfile.ListDirectory(os.path.join(self.dataset_dir, dirname))
+        for d in dirs:
+            label = long(d.split('.')[0][-3:])
+            dpath = os.path.join(self.dataset_dir, dirname, d)
+            dfiles = sorted(os.listdir(dpath))
+            flist = []
+            for fn in dfiles:
+                flist.append(os.path.join(dpath, fn))
+            files.append(flist)
+            labels.append(label)
+        return files, labels
+
+    def _read_samples(self, input_queue):
+        images = []
+        record_iterator = tf.python_io.tf_record_iterator(path=input_queue[0])
+        for string_record in record_iterator:
+            example = tf.train.Example()
+            example.ParseFromString(string_record)
+
+            height = int(example.features.feature['height'].int64_list.value[0])
+            width = int(example.features.feature['width'].int64_list.value[0])
+            image = (example.features.feature['image'].float32_list.value[0])
+            image = np.fromstring(image, dtype=np.float32)
+            image = np.reshape(image, [width, height, -1])
+            image = ops.convert_to_tensor(image, dtypes.float32)
+            image = tf.image.resize_images(image, (224, 224))
+            image = tf.cast(image, tf.float32)
+            images.append(image)
+
+        label = input_queue[1]
+        label = tf.cast(label - 1, tf.int64)
+        image = ops.convert_to_tensor(images, dtypes.float32)
+
+        return image, label
+
 class HybridModelReader(object):
 
     def __init__(self, dataset_dir, split_dir, num_epochs, batch_size, split=1):

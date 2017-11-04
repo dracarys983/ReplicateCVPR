@@ -133,6 +133,131 @@ def _write_to_tfrecords(task,
                 logging.info("%s: status: %d of %d done", task_as_string(task), n, l)
     return n, two_person
 
+def _write_images_to_tfrecords(task,
+                    reader,
+                    split,
+                    outdir='',
+                    train=True):
+    def _float32_feature(value):
+        return tf.train.Feature(float_list=tf.train.FloatList(value=value))
+
+    def _int64_feature(value):
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+    if train:
+        fpath = reader.train_splits[split]
+        splitname = "train"
+    else:
+        fpath = reader.test_splits[split]
+        splitname = "test"
+    logging.info("%s: Converting %s split%d files to TFRecords", task_as_string(task), splitname, split)
+
+    with open(os.path.join(reader.splits, 'faulty_skeletons'), 'r') as f:
+        remove = f.readlines()
+        remove = [x.strip() for x in remove]
+
+    with open(fpath, 'r') as f:
+        lines = f.readlines()
+        files = [x.strip().split()[0] for x in lines]
+        labels = [int(x.strip().split()[1]) for x in lines]
+        n = 0; l = len(files); two_person = 0
+        for fname, label in zip(files, labels):
+            if not any(fname.split('.')[0] in x for x in remove):
+                n += 1
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir)
+                    os.makedirs(os.path.join(outdir, splitname + str(split)))
+                elif not os.path.exists(os.path.join(outdir, splitname + str(split))):
+                    os.makedirs(os.path.join(outdir, splitname + str(split)))
+
+                vid_tfrecord = tf.python_io.TFRecordWriter(os.path.join(outdir, splitname + str(split), fname+'.tfrecord'))
+                video = reader._read_skeleton_file(fname)
+                skeletons_0, skeletons_1 = video._get_main_actor_skeletons()
+
+                two_person_action = True
+                for i in skeletons_1:
+                    if i._is_zero_skeleton:
+                        two_person_action = False
+
+                if two_person_action:
+                    im_size = (4, len(skeletons_0), 48)
+                else:
+                    im_size = (4, len(skeletons_0), 24)
+
+                im_r = np.zeros(im_size); im_theta = np.zeros(im_size); im_phi = np.zeros(im_size)
+                for nn, skeleton in enumerate(skeletons_0):
+                    joints = skeleton._get_joint_objects()
+                    assert len(joints) == 25
+                    im_num = 0
+                    for i in [4, 8, 12, 16]:
+                        feat_len = 0
+                        joint = joints[i]
+                        x, y, z = joint._get_cartesian_coordinates()
+                        for j in range(len(joints)):
+                            if not j == i:
+                                joint_ = joints[j]
+                                x_, y_, z_ = joint_._get_cartesian_coordinates()
+                                r = x - x_; theta = y - y_; phi = z - z_
+                                im_r[im_num, nn, feat_len] = r; im_theta[im_num, nn, feat_len] = theta; im_phi[im_num, nn, feat_len] = phi
+                                feat_len += 1
+                        im_num += 1
+                if two_person_action:
+                    processed = 24
+                    two_person += 1
+                    for nn, skeleton in enumerate(skeletons_0):
+                        joints_0 = skeleton._get_joint_objects()
+                        joints_1 = skeletons_1[nn]._get_joint_objects()
+                        assert len(joints_0) == 25; assert len(joints_1) == 25
+                        im_num = 0
+                        for i in [4, 8, 12, 16]:
+                            feat_len = processed
+                            joint = joints_0[i]
+                            x, y, z = joint._get_cartesian_coordinates()
+                            for j in range(len(joints_1)):
+                                if not j == i:
+                                    joint_ = joints_1[j]
+                                    x_, y_, z_ = joint_._get_cartesian_coordinates()
+                                    r = x - x_; theta = y - y_; phi = z - z_
+                                    im_r[im_num, nn, feat_len] = r; im_theta[im_num, nn, feat_len] = theta; im_phi[im_num, nn, feat_len] = phi
+                                    feat_len += 1
+                            im_num += 1
+
+                for im in im_r:
+                    im += np.amin(im)
+                    im *= 255.0 / np.amax(im)
+                    w, h = im.shape
+                    im = np.reshape(im, [-1])
+                    example = tf.train.Example(features=tf.train.Features(feature={
+                        'height': _int64_feature(h),
+                        'width': _int64_feature(w),
+                        'image': _float32_feature(im),
+                        'label': _int64_feature(label)}))
+                    vid_tfrecord.write(example.SerializeToString())
+                for im in im_theta:
+                    im += np.amin(im)
+                    im *= 255.0 / np.amax(im)
+                    w, h = im.shape
+                    im = np.reshape(im, [-1])
+                    example = tf.train.Example(features=tf.train.Features(feature={
+                        'height': _int64_feature(h),
+                        'width': _int64_feature(w),
+                        'image': _float32_feature(im),
+                        'label': _int64_feature(label)}))
+                    vid_tfrecord.write(example.SerializeToString())
+                for im in im_phi:
+                    im += np.amin(im)
+                    im *= 255.0 / np.amax(im)
+                    w, h = im.shape
+                    im = np.reshape(im, [-1])
+                    example = tf.train.Example(features=tf.train.Features(feature={
+                        'height': _int64_feature(h),
+                        'width': _int64_feature(w),
+                        'image': _float32_feature(im),
+                        'label': _int64_feature(label)}))
+                    vid_tfrecord.write(example.SerializeToString())
+                logging.info("%s: status: %d of %d done", task_as_string(task), n, l)
+    return n, two_person
+
 def _write_to_images(task,
                     reader,
                     split,
@@ -197,7 +322,7 @@ def _write_to_images(task,
                                 joint_ = joints[j]
                                 x_, y_, z_ = joint_._get_cartesian_coordinates()
                                 r = x - x_; theta = y - y_; phi = z - z_
-                                im_r[im_num, nn, feat_len] = r; im_theta[im_num, nn, feat_len] = theta; im_phi[im_num, nn, feat_len] = phi
+                                im_r[im_num, nn, feat_len] = -r; im_theta[im_num, nn, feat_len] = -theta; im_phi[im_num, nn, feat_len] = -phi
                                 feat_len += 1
                         im_num += 1
                 if two_person_action:
@@ -217,7 +342,7 @@ def _write_to_images(task,
                                     joint_ = joints_1[j]
                                     x_, y_, z_ = joint_._get_cartesian_coordinates()
                                     r = x - x_; theta = y - y_; phi = z - z_
-                                    im_r[im_num, nn, feat_len] = r; im_theta[im_num, nn, feat_len] = theta; im_phi[im_num, nn, feat_len] = phi
+                                    im_r[im_num, nn, feat_len] = -r; im_theta[im_num, nn, feat_len] = -theta; im_phi[im_num, nn, feat_len] = -phi
                                     feat_len += 1
                             im_num += 1
 
@@ -555,7 +680,7 @@ def main(unused_argv):
                             outdir=FLAGS.output_dir,
                             train=FLAGS.is_training)
     else:
-        n, two_person = _write_to_images(task,
+        n, two_person = _write_images_to_tfrecords(task,
                             reader=reader,
                             split=FLAGS.split_num,
                             outdir=FLAGS.output_dir,
