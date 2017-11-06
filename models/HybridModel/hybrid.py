@@ -29,8 +29,15 @@ def get_pretrained_model_feats(inputs, scopename='', is_training=True):
     with slim.arg_scope(scope):
         _, end_points = vgg_19(inputs)
         features = end_points['vgg_19/conv5/conv5_1']           # 14 x 14 x 512
-        print features
-        restore_vars = framework.get_variables_to_restore(exclude=['global_step', 'fc6', 'fc7', 'fc8'])
+        restore_vars = framework.get_variables('vgg_19/conv1')
+        restore_vars.extend(framework.get_variables('vgg_19/pool1'))
+        restore_vars.extend(framework.get_variables('vgg_19/conv2'))
+        restore_vars.extend(framework.get_variables('vgg_19/pool2'))
+        restore_vars.extend(framework.get_variables('vgg_19/conv3'))
+        restore_vars.extend(framework.get_variables('vgg_19/pool3'))
+        restore_vars.extend(framework.get_variables('vgg_19/conv4'))
+        restore_vars.extend(framework.get_variables('vgg_19/pool4'))
+        restore_vars.extend(framework.get_variables('vgg_19/conv5/conv5_1'))
 
     tvars = []
 

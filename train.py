@@ -154,18 +154,16 @@ def build_graph(reader,
     loss_2 = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits_aux_2, labels=labels_batch))
     loss_3 = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits_aux_3, labels=labels_batch))
 
-    loss = loss_0 + loss_1 + loss_2 + loss_3
+    loss = tf.add_n([loss_0, loss_1, loss_2, loss_3], name='finalLoss')
 
-    predictions = ( logits_aux_0 + logits_aux_1 + logits_aux_2 + logits_aux_3 )
+    predictions = tf.add_n([logits_aux_0, logits_aux_1, logits_aux_2, logits_aux_3], name='predictions')
 
-    train_vars = train_v0
-    train_vars.extend(train_v1)
-    train_vars.extend(train_v2)
-    train_vars.extend(train_v3)
-    train_vars.extend(train_v4)
-    train_vars.extend(train_v5)
+    train_vars = train_v0               # No learnable variables here
+    train_vars.extend(train_v1)         # Again, no learnable variables here
+    train_vars.extend(train_v2)         # MTLN parameters: LEARNABLE
     train_op = optimizer.minimize(loss, global_step=global_step, var_list=train_vars)
-    logging.info("%s\n*****************************\n%s", train_vars, restore_vars)
+    logging.info("TRAIN VARIABLES:\n%s\n***************************************\nRESTORE VARIABLES:\n%s",
+            train_vars, restore_vars)
 
     tf.add_to_collection("global_step", global_step)
     tf.add_to_collection("loss", loss)
@@ -384,7 +382,7 @@ class Trainer(object):
                         features.append(feat_vec)
 
                     # [(14, 14, 512), ..] -> [(7168,), ..]
-		    feats_for_aux = []
+                    feats_for_aux = []
                     for feat in features:
                         out = sess.run(aux_output, feed_dict={aux_feat_batch: feat})
                         feats_for_aux.append(out)
@@ -392,6 +390,7 @@ class Trainer(object):
                     # [(7168,), ..] -> [(21504,), (21504,)]
                     aux_fcs = [np.concatenate([feats_for_aux[i], feats_for_aux[i+4],
                         feats_for_aux[i+8]], axis=1) for i in range(4)]
+
 
                     _, global_step_val, predictions_val, labels_val, loss_val = sess.run([train_op,
                         global_step, predictions, labels, loss], feed_dict={labels: label_batch,
